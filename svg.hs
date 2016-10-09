@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleContexts       #-}
 {-# LANGUAGE NoMonomorphismRestriction       #-}
 {-# LANGUAGE ConstraintKinds       #-}
+{-# LANGUAGE RecursiveDo       #-}
 
 module Main where
 
@@ -14,11 +15,12 @@ import qualified Data.Map as M
 import           Reflex.Dom
 import Data.Text (Text,pack)
 import Data.Monoid
+import Data.Time.Clock
+import Control.Concurrent
+import Control.Monad.Trans
+import Control.Monad
+import Lib
 
-type SG = SpiderTimeline Global
-type DS = Dynamic SG
-type ES = Event SG
-type MS = MonadWidget SG
 
 ooo = return ()
 
@@ -32,6 +34,9 @@ main = mainWidgetWithCss $(embedFile "style.css") $ do
         divClass "buttonDiv" $ do
             el "h3" $ text "Button"
             buttonApp
+        divClass "counterDiv" $ do
+            el "h3" $ text "Counter"
+            counterApp
 
 
 --------------------- svg --------------------------------
@@ -65,12 +70,12 @@ touchMouse x y w = leftmost
         [   x <$ domEvent Mousedown w
         ,   y <$ domEvent Mouseup w
         ,   x <$ domEvent Touchstart w
-        ,   y <$ domEvent Touchend w]
+        ,   y <$ domEvent Touchend w
+        ]
 
 light :: MS m => DS Color ->  m ()
 light color = do
-    let attrs = fmap (\c -> [("style","background-color:" <> pack (show c)),("class","light")] :: Map Text Text) color
-
+    let attrs = (\c -> [("style","background-color:" <> pack (show c)),("class","light")] :: Map Text Text) <$> color
     elDynAttr "div" attrs $ ooo
 
 buttonApp :: MS m => m ()
@@ -79,3 +84,39 @@ buttonApp = do
     color <- holdDyn White $ touchMouse Red White btn
     light color
 
+
+----------------------counter -------------------------------------
+-- | delay an Event by the amount of time specified in its value
+drivenDelay     :: MS m 
+                => ES (NominalDiffTime,a) -- ^ delay time in seconds + value
+                -> m (ES a)
+drivenDelay e =  performEventAsync . ffor e $ \(dt,a) cb -> liftIO . void . forkIO $ do
+  threadDelay . ceiling $ dt * 1000000
+  cb a
+
+-- | frequency controlled gun machine 
+feedbackDelay   :: MS m 
+                => BS NominalDiffTime -- ^ time interval between fires in seconds
+                -> DS Bool -- ^ False is stop/stopped , True is fire/firing
+                -> m (ES ())
+feedbackDelay delta state  = do 
+    rec    e <- drivenDelay . attach delta $ 
+                leftmost [gate (current state) e, ffilter id . gate (not <$> current state) $ updated state]
+    return $ () <$ e
+
+counterApp :: MS m => m ()
+counterApp = do
+    up <- ((*2) <$) <$> button "slower"
+    down <- ((/2) <$) <$> button "faster"
+    rec     display value
+            divClass "counter" $ 
+                foldDyn ($) (0 :: Int) (leftmost [(+1) <$ tick, const 0 <$ t4]) >>= display
+            tick <- feedbackDelay (current value) state
+            value <- foldDyn ($) 0.2 $ leftmost [up,down]
+            state <- holdDyn False $ leftmost [t2,t3]
+            (t2,t3,t4) <- divClass "commands" $ do
+                        t2 <- (False <$) <$> button "stop"
+                        t3 <- (True <$) <$> button "start"
+                        t4 <- button "reset"
+                        return (t2,t3,t4)
+    return ()
