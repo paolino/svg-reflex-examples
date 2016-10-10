@@ -101,7 +101,8 @@ feedbackDelay   :: MS m
                 -> m (ES ())
 feedbackDelay delta state  = do 
     rec    e <- drivenDelay . attach delta $ 
-                leftmost [gate (current state) e, ffilter id . gate (not <$> current state) $ updated state]
+                leftmost [gate (current state) e, 
+                    ffilter id . gate (not <$> current state) $ updated state]
     return $ () <$ e
 
 counterApp :: MS m => m ()
