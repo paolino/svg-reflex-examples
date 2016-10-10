@@ -37,6 +37,9 @@ main = mainWidgetWithCss $(embedFile "style.css") $ do
         divClass "counterDiv" $ do
             el "h3" $ text "Counter"
             counterApp
+        divClass "morphingDiv" $ do
+            el "h3" $ text "Morphing"
+            morphingApp
 
 
 --------------------- svg --------------------------------
@@ -120,4 +123,18 @@ counterApp = do
                         t3 <- (True <$) <$> button "start"
                         t4 <- button "reset"
                         return (t2,t3,t4)
+    return ()
+---------------------------- morphing ---------------
+
+morphingCount :: MS m => Int -> m (ES Int)
+morphingCount n = do
+    m <- ffilter (<=10) <$> (n + 1 <$) <$> button "more"
+    l <- ffilter (>= 1) <$> (n - 1 <$) <$> button "less"
+    el "ol" . replicateM n $ el "li" $ text "()"
+    return $ leftmost [m,l]
+
+morphingApp :: MS m => m ()
+morphingApp = do
+    rec     n <- holdDyn 1 t
+            t <- domMorph morphingCount n        
     return ()
